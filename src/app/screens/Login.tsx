@@ -1,19 +1,41 @@
-import { useState } from "react";
-import { useNavigate } from "react-router";
-import { Plane } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
+import { Plane, AlertCircle } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
+import { useAuth } from "../providers/AuthProvider";
+import { ApiError } from "../api/client";
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { login, status, isAuthenticating } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const from =
+    (location.state as { from?: { pathname?: string } })?.from?.pathname || "/";
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (status === "authenticated") {
+      navigate(from, { replace: true });
+    }
+  }, [status, navigate, from]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock login
-    navigate("/");
+    setError(null);
+    try {
+      await login(email, password);
+      navigate(from, { replace: true });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message || "Invalid credentials");
+      } else {
+        setError("Unable to sign in. Please try again.");
+      }
+    }
   };
 
   return (
@@ -69,11 +91,19 @@ export default function Login() {
               />
             </div>
 
+            {error && (
+              <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <AlertCircle className="w-4 h-4" />
+                <p>{error}</p>
+              </div>
+            )}
+
             <Button
               type="submit"
-              className="w-full h-11 bg-[#2563EB] hover:bg-[#1D4ED8]"
+              disabled={isAuthenticating}
+              className="w-full h-11 bg-[#2563EB] hover:bg-[#1D4ED8] disabled:opacity-70"
             >
-              Sign in
+              {isAuthenticating ? "Signing in..." : "Sign in"}
             </Button>
           </form>
         </div>
@@ -81,7 +111,7 @@ export default function Login() {
         {/* Footer */}
         <p className="text-center text-sm text-gray-600 mt-6">
           Don't have an account?{" "}
-          <button className="text-[#2563EB] hover:underline">
+          <button className="text-[#2563EB] hover:underline" type="button">
             Contact your administrator
           </button>
         </p>

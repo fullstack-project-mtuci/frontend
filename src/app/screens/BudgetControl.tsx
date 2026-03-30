@@ -1,423 +1,199 @@
-import { useState } from "react";
-import {
-  DollarSign,
-  TrendingUp,
-  AlertTriangle,
-  Building2,
-  Download,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Download, AlertTriangle } from "lucide-react";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Badge } from "../components/ui/badge";
-import { Progress } from "../components/ui/progress";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
-
-const departments = [
-  {
-    name: "Engineering",
-    budget: 120000,
-    spent: 95000,
-    trips: 18,
-    status: "healthy",
-  },
-  {
-    name: "Sales",
-    budget: 150000,
-    spent: 142000,
-    trips: 32,
-    status: "warning",
-  },
-  {
-    name: "Marketing",
-    budget: 80000,
-    spent: 65000,
-    trips: 15,
-    status: "healthy",
-  },
-  {
-    name: "Product",
-    budget: 90000,
-    spent: 92000,
-    trips: 12,
-    status: "exceeded",
-  },
-  {
-    name: "Operations",
-    budget: 60000,
-    spent: 48000,
-    trips: 10,
-    status: "healthy",
-  },
-];
-
-const monthlyData = [
-  { month: "Jan", budget: 80000, spent: 75000, id: "jan-2026" },
-  { month: "Feb", budget: 80000, spent: 78000, id: "feb-2026" },
-  { month: "Mar", budget: 80000, spent: 82000, id: "mar-2026" },
-  { month: "Apr", budget: 80000, spent: 69000, id: "apr-2026" },
-];
-
-const categoryData = [
-  { name: "Transport", value: 156000, color: "#2563EB", id: "transport" },
-  { name: "Accommodation", value: 198000, color: "#7C3AED", id: "accommodation" },
-  { name: "Meals", value: 52000, color: "#059669", id: "meals" },
-  { name: "Other", value: 36000, color: "#F59E0B", id: "other" },
-];
+import { listBudgets } from "../api";
+import type { Budget } from "../types";
+import { formatCurrency, formatDate } from "../lib/format";
+import { ApiError } from "../api/client";
 
 export default function BudgetControl() {
-  const [selectedPeriod, setSelectedPeriod] = useState("2026");
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [hasAccess, setHasAccess] = useState(true);
+  const [filters, setFilters] = useState({ scopeType: "department", scopeId: "" });
+  const [appliedFilters, setAppliedFilters] = useState(filters);
 
-  const totalBudget = departments.reduce((sum, dept) => sum + dept.budget, 0);
-  const totalSpent = departments.reduce((sum, dept) => sum + dept.spent, 0);
-  const percentUsed = (totalSpent / totalBudget) * 100;
-  const exceededCount = departments.filter(
-    (d) => d.status === "exceeded"
-  ).length;
-  const warningCount = departments.filter((d) => d.status === "warning").length;
+  useEffect(() => {
+    void loadBudgets(appliedFilters);
+  }, [appliedFilters]);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "healthy":
-        return "bg-green-100 text-green-700 hover:bg-green-100";
-      case "warning":
-        return "bg-orange-100 text-orange-700 hover:bg-orange-100";
-      case "exceeded":
-        return "bg-red-100 text-red-700 hover:bg-red-100";
-      default:
-        return "bg-gray-100 text-gray-700 hover:bg-gray-100";
+  const loadBudgets = async (params: { scopeType?: string; scopeId?: string }) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await listBudgets({
+        scopeType: params.scopeType,
+        scopeId: params.scopeId?.trim() || undefined,
+      });
+      setBudgets(data);
+      setHasAccess(true);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        setHasAccess(false);
+        setBudgets([]);
+      } else {
+        console.error(err);
+        setError("Unable to load budgets");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
+  const summary = useMemo(() => {
+    const total = budgets.reduce((sum, b) => sum + b.totalLimit, 0);
+    const reserved = budgets.reduce((sum, b) => sum + b.reservedAmount, 0);
+    const spent = budgets.reduce((sum, b) => sum + b.spentAmount, 0);
+    return { total, reserved, spent };
+  }, [budgets]);
+
+  if (!hasAccess) {
+    return (
+      <Card className="p-8 text-center space-y-3">
+        <AlertTriangle className="w-8 h-8 text-orange-500 mx-auto" />
+        <h2 className="text-lg font-semibold text-[#0F172A]">Budgets unavailable</h2>
+        <p className="text-sm text-gray-600">Only administrators can view budget allocation data.</p>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-[#0F172A]">
-            Budget Control
-          </h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Monitor and manage departmental travel budgets
-          </p>
+          <h1 className="text-2xl font-semibold text-[#0F172A]">Budget Control</h1>
+          <p className="text-sm text-gray-600 mt-1">Monitor allocations, reservations, and actual spend.</p>
         </div>
-        <Button variant="outline">
+        <Button variant="outline" disabled>
           <Download className="w-4 h-4 mr-2" />
-          Export Report
+          Export CSV (coming soon)
         </Button>
       </div>
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-gray-600 mb-2">Total Budget</p>
-              <p className="text-3xl font-semibold text-[#0F172A] mb-1">
-                ${(totalBudget / 1000).toFixed(0)}K
-              </p>
-              <p className="text-xs text-gray-500">Fiscal Year 2026</p>
-            </div>
-            <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center">
-              <DollarSign className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-gray-600 mb-2">Total Spent</p>
-              <p className="text-3xl font-semibold text-[#0F172A] mb-1">
-                ${(totalSpent / 1000).toFixed(0)}K
-              </p>
-              <p className="text-xs text-gray-500">
-                {percentUsed.toFixed(1)}% of budget
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-orange-500 rounded-lg flex items-center justify-center">
-              <TrendingUp className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-gray-600 mb-2">Departments</p>
-              <p className="text-3xl font-semibold text-[#0F172A] mb-1">
-                {departments.length}
-              </p>
-              <p className="text-xs text-gray-500">Active departments</p>
-            </div>
-            <div className="w-12 h-12 bg-purple-500 rounded-lg flex items-center justify-center">
-              <Building2 className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-gray-600 mb-2">Alerts</p>
-              <p className="text-3xl font-semibold text-[#0F172A] mb-1">
-                {exceededCount + warningCount}
-              </p>
-              <p className="text-xs text-gray-500">Require attention</p>
-            </div>
-            <div className="w-12 h-12 bg-red-500 rounded-lg flex items-center justify-center">
-              <AlertTriangle className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Monthly Trend */}
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold text-[#0F172A] mb-6">
-            Monthly Spending Trend
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-              <XAxis
-                dataKey="month"
-                tick={{ fill: "#6B7280", fontSize: 12 }}
-              />
-              <YAxis tick={{ fill: "#6B7280", fontSize: 12 }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "white",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: "8px",
-                }}
-              />
-              <Legend />
-              <Bar dataKey="budget" fill="#93C5FD" name="Budget" />
-              <Bar dataKey="spent" fill="#2563EB" name="Spent" />
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-
-        {/* Category Breakdown */}
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold text-[#0F172A] mb-6">
-            Spending by Category
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={categoryData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) =>
-                  `${name} ${(percent * 100).toFixed(0)}%`
-                }
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {categoryData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "white",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: "8px",
-                }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </Card>
-      </div>
-
-      {/* Department Budgets */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-[#0F172A]">
-            Department Budgets
-          </h2>
-          <div className="flex gap-2">
-            <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
-              Healthy
-            </Badge>
-            <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">
-              Warning ({">"} 90%)
-            </Badge>
-            <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
-              Exceeded
-            </Badge>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left text-xs font-medium text-gray-600 pb-3">
-                  Department
-                </th>
-                <th className="text-left text-xs font-medium text-gray-600 pb-3">
-                  Budget
-                </th>
-                <th className="text-left text-xs font-medium text-gray-600 pb-3">
-                  Spent
-                </th>
-                <th className="text-left text-xs font-medium text-gray-600 pb-3">
-                  Remaining
-                </th>
-                <th className="text-left text-xs font-medium text-gray-600 pb-3">
-                  Usage
-                </th>
-                <th className="text-left text-xs font-medium text-gray-600 pb-3">
-                  Trips
-                </th>
-                <th className="text-left text-xs font-medium text-gray-600 pb-3">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {departments.map((dept) => {
-                const percentUsed = (dept.spent / dept.budget) * 100;
-                const remaining = dept.budget - dept.spent;
-
-                return (
-                  <tr key={dept.name} className="border-b border-gray-100">
-                    <td className="py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-[#2563EB] rounded-lg flex items-center justify-center">
-                          <Building2 className="w-5 h-5 text-white" />
-                        </div>
-                        <span className="font-medium text-[#0F172A]">
-                          {dept.name}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-4 text-sm font-medium text-[#0F172A]">
-                      ${dept.budget.toLocaleString()}
-                    </td>
-                    <td className="py-4 text-sm text-gray-700">
-                      ${dept.spent.toLocaleString()}
-                    </td>
-                    <td className="py-4">
-                      <span
-                        className={`text-sm font-medium ${
-                          remaining >= 0 ? "text-green-600" : "text-red-600"
-                        }`}
-                      >
-                        ${Math.abs(remaining).toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="py-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span
-                            className={`font-medium ${
-                              percentUsed > 100
-                                ? "text-red-600"
-                                : percentUsed > 90
-                                ? "text-orange-600"
-                                : "text-green-600"
-                            }`}
-                          >
-                            {percentUsed.toFixed(1)}%
-                          </span>
-                        </div>
-                        <Progress
-                          value={Math.min(percentUsed, 100)}
-                          className="h-2"
-                        />
-                      </div>
-                    </td>
-                    <td className="py-4 text-sm text-gray-700">
-                      {dept.trips}
-                    </td>
-                    <td className="py-4">
-                      <Badge className={getStatusColor(dept.status)}>
-                        {dept.status}
-                      </Badge>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Summary */}
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <div className="grid grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs text-gray-600 mb-1">Total Budget</p>
-              <p className="text-lg font-semibold text-[#0F172A]">
-                ${totalBudget.toLocaleString()}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-600 mb-1">Total Spent</p>
-              <p className="text-lg font-semibold text-orange-600">
-                ${totalSpent.toLocaleString()}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-600 mb-1">Remaining</p>
-              <p className="text-lg font-semibold text-green-600">
-                ${(totalBudget - totalSpent).toLocaleString()}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-600 mb-1">Average Usage</p>
-              <p className="text-lg font-semibold text-[#2563EB]">
-                {percentUsed.toFixed(1)}%
-              </p>
-            </div>
-          </div>
+      <Card className="p-6 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Select value={filters.scopeType} onValueChange={(value) => setFilters((prev) => ({ ...prev, scopeType: value }))}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="department">Department</SelectItem>
+              <SelectItem value="project">Project</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            placeholder={`${filters.scopeType} ID`}
+            value={filters.scopeId}
+            onChange={(e) => setFilters((prev) => ({ ...prev, scopeId: e.target.value }))}
+          />
+          <Button onClick={() => setAppliedFilters(filters)}>Apply</Button>
         </div>
       </Card>
 
-      {/* Warnings */}
-      {(exceededCount > 0 || warningCount > 0) && (
-        <Card className="p-6 bg-orange-50 border-orange-200">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5" />
-            <div className="flex-1">
-              <h3 className="font-semibold text-orange-900 mb-2">
-                Budget Alerts
-              </h3>
-              <ul className="space-y-1">
-                {exceededCount > 0 && (
-                  <li className="text-sm text-orange-800">
-                    • {exceededCount} department(s) have exceeded their budget
-                  </li>
-                )}
-                {warningCount > 0 && (
-                  <li className="text-sm text-orange-800">
-                    • {warningCount} department(s) are approaching budget limit
-                    ({">"} 90%)
-                  </li>
-                )}
-              </ul>
-            </div>
-          </div>
-        </Card>
+      {error && (
+        <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2 rounded-lg">
+          <AlertTriangle className="w-4 h-4" />
+          {error}
+        </div>
       )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <SummaryCard label="Total Limit" value={formatCurrency(summary.total)} />
+        <SummaryCard label="Reserved" value={formatCurrency(summary.reserved)} variant="warning" />
+        <SummaryCard label="Spent" value={formatCurrency(summary.spent)} variant="danger" />
+      </div>
+
+      <Card className="p-0">
+        {loading ? (
+          <div className="py-12 text-center text-gray-500">Loading budgets...</div>
+        ) : budgets.length === 0 ? (
+          <div className="py-12 text-center text-gray-500">No budgets found for current filters.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="text-xs text-gray-500 border-b border-gray-200">
+                <tr>
+                  <th className="text-left font-medium py-3 px-4">Scope</th>
+                  <th className="text-left font-medium py-3 px-4">Period</th>
+                  <th className="text-left font-medium py-3 px-4">Limit</th>
+                  <th className="text-left font-medium py-3 px-4">Reserved</th>
+                  <th className="text-left font-medium py-3 px-4">Spent</th>
+                  <th className="text-left font-medium py-3 px-4">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {budgets.map((budget) => {
+                  const remaining = budget.totalLimit - budget.spentAmount;
+                  const usage = (budget.spentAmount / budget.totalLimit) * 100;
+                  let statusVariant = "success";
+                  if (usage > 100) statusVariant = "danger";
+                  else if (usage > 90) statusVariant = "warning";
+
+                  return (
+                    <tr key={budget.id} className="border-b border-gray-100">
+                      <td className="py-4 px-4 text-sm text-[#0F172A] capitalize">
+                        {budget.scopeType} • {budget.scopeId.slice(0, 8)}
+                      </td>
+                      <td className="py-4 px-4 text-sm text-gray-600">
+                        {formatDate(budget.periodStart)} - {formatDate(budget.periodEnd)}
+                      </td>
+                      <td className="py-4 px-4 text-sm font-semibold text-[#0F172A]">
+                        {formatCurrency(budget.totalLimit, budget.currency)}
+                      </td>
+                      <td className="py-4 px-4 text-sm text-gray-700">
+                        {formatCurrency(budget.reservedAmount, budget.currency)}
+                      </td>
+                      <td className="py-4 px-4 text-sm text-gray-700">
+                        {formatCurrency(budget.spentAmount, budget.currency)}
+                      </td>
+                      <td className="py-4 px-4">
+                        <Badge
+                          className={`capitalize ${
+                            statusVariant === "danger"
+                              ? "bg-red-100 text-red-700"
+                              : statusVariant === "warning"
+                              ? "bg-orange-100 text-orange-700"
+                              : "bg-green-100 text-green-700"
+                          }`}
+                        >
+                          {usage.toFixed(1)}% used • {remaining >= 0 ? "Remaining" : "Over"}
+                        </Badge>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  variant = "default",
+}: {
+  label: string;
+  value: string;
+  variant?: "default" | "warning" | "danger";
+}) {
+  const colors: Record<string, string> = {
+    default: "text-[#0F172A]",
+    warning: "text-orange-600",
+    danger: "text-red-600",
+  };
+  return (
+    <Card className="p-4">
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <p className={`text-2xl font-semibold ${colors[variant]}`}>{value}</p>
+    </Card>
   );
 }

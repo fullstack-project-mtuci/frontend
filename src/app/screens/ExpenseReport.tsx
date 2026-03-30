@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Upload, Plus, X, FileText, Camera } from "lucide-react";
+import { ArrowLeft, Upload, Plus, X, FileText, Camera, AlertCircle, Trash2 } from "lucide-react";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -13,347 +13,368 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
+import { Badge } from "../components/ui/badge";
+import {
+  addExpenseItem,
+  createExpenseReport,
+  deleteExpenseItem,
+  fetchExpenseReport,
+  updateExpenseReportStatus,
+  uploadReceipt,
+} from "../api";
+import type { ExpenseItem, ExpenseReport, ReceiptFile, ReceiptUploadResponse } from "../types";
+import { formatCurrency } from "../lib/format";
+import { getExpenseStatusConfig } from "../lib/status";
+import { ApiError } from "../api/client";
 
-interface Receipt {
-  id: string;
-  date: string;
-  vendor: string;
+const categories = ["Transport", "Hotel", "Meals", "Entertainment", "Other"];
+
+type ExpenseFormState = {
   category: string;
+  expenseDate: string;
+  vendorName: string;
   amount: string;
-  imageUrl?: string;
-}
+  currency: string;
+  taxAmount: string;
+  description: string;
+  receiptFileId?: string;
+};
 
-export default function ExpenseReport() {
-  const navigate = useNavigate();
+const defaultForm = (currency: string): ExpenseFormState => ({
+  category: "Transport",
+  expenseDate: "",
+  vendorName: "",
+  amount: "0",
+  currency,
+  taxAmount: "0",
+  description: "",
+});
+
+export default function ExpenseReportScreen() {
   const { id } = useParams();
-  const [receipts, setReceipts] = useState<Receipt[]>([
-    {
-      id: "1",
-      date: "2026-04-15",
-      vendor: "JFK Airport Taxi",
-      category: "Transport",
-      amount: "65.00",
-      imageUrl: "receipt1",
-    },
-    {
-      id: "2",
-      date: "2026-04-15",
-      vendor: "Hilton Manhattan",
-      category: "Hotel",
-      amount: "420.00",
-      imageUrl: "receipt2",
-    },
-    {
-      id: "3",
-      date: "2026-04-16",
-      vendor: "Blue Bottle Coffee",
-      category: "Meals",
-      amount: "12.50",
-      imageUrl: "receipt3",
-    },
-  ]);
+  const navigate = useNavigate();
+  const [report, setReport] = useState<ExpenseReport | null>(null);
+  const [items, setItems] = useState<ExpenseItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [missingReport, setMissingReport] = useState(false);
+  const [formVisible, setFormVisible] = useState(false);
+  const [formState, setFormState] = useState<ExpenseFormState>(defaultForm("USD"));
+  const [receiptPreview, setReceiptPreview] = useState<ReceiptFile | null>(null);
+  const [statusComment, setStatusComment] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [showUploadForm, setShowUploadForm] = useState(false);
-  const [newReceipt, setNewReceipt] = useState<Receipt>({
-    id: "",
-    date: "",
-    vendor: "",
-    category: "",
-    amount: "",
-  });
+  useEffect(() => {
+    if (id) {
+      void loadReport(id);
+    }
+  }, [id]);
 
-  const totalAdvance = 2000;
-  const totalSpent = receipts.reduce(
-    (sum, receipt) => sum + parseFloat(receipt.amount),
-    0
-  );
-  const remaining = totalAdvance - totalSpent;
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Simulate OCR extraction
-      setNewReceipt({
-        ...newReceipt,
-        imageUrl: URL.createObjectURL(file),
-        date: "2026-04-17",
-        vendor: "ABC Restaurant",
-        amount: "45.00",
-      });
-      setShowUploadForm(true);
+  const loadReport = async (tripId: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      setMissingReport(false);
+      const data = await fetchExpenseReport(tripId);
+      setReport(data.report);
+      setItems(data.items);
+      setFormState(defaultForm(data.report.currency));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setMissingReport(true);
+      } else {
+        setError("Unable to load expense report");
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const addReceipt = () => {
-    if (newReceipt.date && newReceipt.vendor && newReceipt.amount) {
-      setReceipts([...receipts, { ...newReceipt, id: Date.now().toString() }]);
-      setNewReceipt({
-        id: "",
-        date: "",
-        vendor: "",
-        category: "",
-        amount: "",
-      });
-      setShowUploadForm(false);
+  const handleCreateReport = async () => {
+    if (!id) return;
+    try {
+      setIsSubmitting(true);
+      const created = await createExpenseReport(id);
+      setReport(created);
+      setItems([]);
+      setMissingReport(false);
+      setFormState(defaultForm(created.currency));
+    } catch (err) {
+      console.error(err);
+      setError("Failed to create expense report");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const deleteReceipt = (id: string) => {
-    setReceipts(receipts.filter((receipt) => receipt.id !== id));
+  const handleReceiptUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !report) return;
+    try {
+      const response: ReceiptUploadResponse = await uploadReceipt(file);
+      setReceiptPreview(response.file);
+      setFormVisible(true);
+      setFormState((prev) => ({
+        ...prev,
+        expenseDate: response.ocrDraft?.expenseDate || prev.expenseDate,
+        amount: response.ocrDraft?.amount ? String(response.ocrDraft.amount) : prev.amount,
+        currency: response.ocrDraft?.currency || report.currency,
+        vendorName: response.ocrDraft?.vendor || prev.vendorName,
+        taxAmount: response.ocrDraft?.tax ? String(response.ocrDraft.tax) : prev.taxAmount,
+        receiptFileId: response.file.id,
+      }));
+    } catch (err) {
+      console.error(err);
+      setError("Failed to upload receipt");
+    }
   };
+
+  const handleAddExpense = async () => {
+    if (!report) return;
+    try {
+      setIsSubmitting(true);
+      await addExpenseItem(report.id, {
+        category: formState.category,
+        expenseDate: formState.expenseDate,
+        vendorName: formState.vendorName,
+        amount: Number(formState.amount) || 0,
+        currency: formState.currency || report.currency,
+        taxAmount: Number(formState.taxAmount) || 0,
+        description: formState.description,
+        receiptFileId: formState.receiptFileId,
+      });
+      await loadReport(report.tripRequestId);
+      setFormVisible(false);
+      setReceiptPreview(null);
+    } catch (err) {
+      console.error(err);
+      setError("Unable to add expense");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteExpense = async (itemId: string) => {
+    if (!report) return;
+    if (!window.confirm("Remove this expense?")) return;
+    try {
+      await deleteExpenseItem(report.id, itemId);
+      await loadReport(report.tripRequestId);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to delete expense");
+    }
+  };
+
+  const handleSubmitReport = async () => {
+    if (!report) return;
+    try {
+      setIsSubmitting(true);
+      const updated = await updateExpenseReportStatus(report.id, "submitted", statusComment);
+      setReport(updated);
+      setStatusComment("");
+    } catch (err) {
+      console.error(err);
+      setError("Failed to submit report");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const totals = useMemo(() => {
+    if (!report) return { advance: 0, spent: 0, balance: 0 };
+    return {
+      advance: report.advanceAmount,
+      spent: report.totalExpenses,
+      balance: report.balanceAmount,
+    };
+  }, [report]);
+
+  if (isLoading) {
+    return <div className="py-12 text-center text-gray-500">Loading expense report...</div>;
+  }
+
+  if (missingReport) {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" onClick={() => navigate(`/trips/${id}`)}>
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Trip
+        </Button>
+        <Card className="p-8 text-center space-y-4">
+          <FileText className="w-10 h-10 text-gray-400 mx-auto" />
+          <p className="text-gray-600">No expense report created for this trip yet.</p>
+          <Button onClick={handleCreateReport} disabled={isSubmitting}>
+            {isSubmitting ? "Creating..." : "Create Expense Report"}
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!report) {
+    return null;
+  }
+
+  const statusConfig = getExpenseStatusConfig(report.status);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate(`/trips/${id}`)}
-        >
+        <Button variant="ghost" size="sm" onClick={() => navigate(`/trips/${id}`)}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Trip
         </Button>
       </div>
 
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-[#0F172A]">
-            Expense Report
-          </h1>
-          <p className="text-sm text-gray-600 mt-1">
-            New York, USA • Apr 15 - 18, 2026
-          </p>
+          <h1 className="text-2xl font-semibold text-[#0F172A]">Expense Report</h1>
+          <p className="text-sm text-gray-600 mt-1">Status: <Badge className={`${statusConfig.className} capitalize`}>{statusConfig.label}</Badge></p>
         </div>
-        <Button
-          className="bg-[#2563EB] hover:bg-[#1D4ED8]"
-          onClick={() => {
-            // Submit expense report
-            navigate("/trips");
-          }}
-        >
-          <FileText className="w-4 h-4 mr-2" />
-          Submit Report
-        </Button>
+        {report.status === "draft" && (
+          <div className="flex gap-3">
+            <Input
+              placeholder="Comment (optional)"
+              value={statusComment}
+              onChange={(e) => setStatusComment(e.target.value)}
+              className="w-64"
+            />
+            <Button onClick={handleSubmitReport} disabled={isSubmitting} className="bg-[#2563EB] hover:bg-[#1D4ED8]">
+              Submit Report
+            </Button>
+          </div>
+        )}
       </div>
 
+      {error && (
+        <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+          <AlertCircle className="w-4 h-4" />
+          {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-3 gap-4">
-            <Card className="p-4">
-              <p className="text-sm text-gray-600 mb-1">Total Advance</p>
-              <p className="text-2xl font-semibold text-[#0F172A]">
-                ${totalAdvance.toFixed(2)}
-              </p>
-            </Card>
-            <Card className="p-4">
-              <p className="text-sm text-gray-600 mb-1">Total Spent</p>
-              <p className="text-2xl font-semibold text-orange-600">
-                ${totalSpent.toFixed(2)}
-              </p>
-            </Card>
-            <Card className="p-4">
-              <p className="text-sm text-gray-600 mb-1">Remaining</p>
-              <p
-                className={`text-2xl font-semibold ${
-                  remaining >= 0 ? "text-green-600" : "text-red-600"
-                }`}
-              >
-                ${Math.abs(remaining).toFixed(2)}
-              </p>
-            </Card>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <SummaryCard label="Advance" value={formatCurrency(totals.advance, report.currency)} subtitle="Paid before trip" />
+            <SummaryCard label="Spent" value={formatCurrency(totals.spent, report.currency)} subtitle={`${items.length} expenses`} variant="warning" />
+            <SummaryCard
+              label={totals.balance >= 0 ? "To Return" : "To Reimburse"}
+              value={formatCurrency(Math.abs(totals.balance), report.currency)}
+              subtitle="Balance"
+              variant={totals.balance >= 0 ? "success" : "danger"}
+            />
           </div>
 
-          {/* Upload Receipt */}
-          {!showUploadForm && (
-            <Card className="p-6">
-              <div className="text-center py-8">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
-                  <Camera className="w-8 h-8 text-[#2563EB]" />
+          {!formVisible ? (
+            <Card className="p-6 text-center">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-16 h-16 bg-blue-50 text-[#2563EB] rounded-full flex items-center justify-center">
+                  <Camera className="w-8 h-8" />
                 </div>
-                <h3 className="text-lg font-semibold text-[#0F172A] mb-2">
-                  Upload Receipt
-                </h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Take a photo or upload an image of your receipt
-                </p>
-                <label htmlFor="receipt-upload">
-                  <Button className="bg-[#2563EB] hover:bg-[#1D4ED8]" asChild>
-                    <span>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Choose File
-                    </span>
+                <p className="text-sm text-gray-600">Upload a receipt or add an expense manually.</p>
+                <div className="flex gap-3">
+                  <label htmlFor="receipt-upload">
+                    <Button asChild>
+                      <span>
+                        <Upload className="w-4 h-4 mr-2" />
+                        Upload Receipt
+                      </span>
+                    </Button>
+                  </label>
+                  <Button variant="outline" onClick={() => setFormVisible(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Manual Entry
                   </Button>
-                </label>
-                <input
-                  id="receipt-upload"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
+                </div>
+                <input id="receipt-upload" type="file" accept="image/*" className="hidden" onChange={handleReceiptUpload} />
               </div>
             </Card>
-          )}
-
-          {/* Upload Form */}
-          {showUploadForm && (
-            <Card className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-[#0F172A]">
-                  New Expense
-                </h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowUploadForm(false)}
-                >
+          ) : (
+            <Card className="p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-[#0F172A]">New Expense</h3>
+                <Button variant="ghost" size="sm" onClick={() => setFormVisible(false)}>
                   <X className="w-4 h-4" />
                 </Button>
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
-                {/* Receipt Preview */}
-                <div>
-                  <Label>Receipt Image</Label>
-                  <div className="mt-1.5 border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50">
-                    {newReceipt.imageUrl ? (
-                      <div className="aspect-[3/4] bg-white rounded border border-gray-200 flex items-center justify-center">
-                        <FileText className="w-12 h-12 text-gray-400" />
-                      </div>
-                    ) : (
-                      <div className="aspect-[3/4] flex items-center justify-center">
-                        <Upload className="w-8 h-8 text-gray-400" />
-                      </div>
-                    )}
-                  </div>
+              {receiptPreview && (
+                <div className="text-sm text-gray-500 flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  Attached receipt: {receiptPreview.originalFilename}
                 </div>
+              )}
 
-                {/* Form Fields */}
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="date">Date</Label>
-                    <Input
-                      id="date"
-                      type="date"
-                      value={newReceipt.date}
-                      onChange={(e) =>
-                        setNewReceipt({ ...newReceipt, date: e.target.value })
-                      }
-                      className="mt-1.5"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="vendor">Vendor</Label>
-                    <Input
-                      id="vendor"
-                      placeholder="e.g., Hilton Hotel"
-                      value={newReceipt.vendor}
-                      onChange={(e) =>
-                        setNewReceipt({ ...newReceipt, vendor: e.target.value })
-                      }
-                      className="mt-1.5"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="category">Category</Label>
-                    <Select
-                      value={newReceipt.category}
-                      onValueChange={(value) =>
-                        setNewReceipt({ ...newReceipt, category: value })
-                      }
-                    >
-                      <SelectTrigger className="mt-1.5">
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Transport">Transport</SelectItem>
-                        <SelectItem value="Hotel">Hotel</SelectItem>
-                        <SelectItem value="Meals">Meals</SelectItem>
-                        <SelectItem value="Entertainment">
-                          Entertainment
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Category</Label>
+                  <Select value={formState.category} onValueChange={(value) => setFormState((prev) => ({ ...prev, category: value }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
                         </SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="amount">Amount ($)</Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={newReceipt.amount}
-                      onChange={(e) =>
-                        setNewReceipt({ ...newReceipt, amount: e.target.value })
-                      }
-                      className="mt-1.5"
-                    />
-                  </div>
-
-                  <Button
-                    className="w-full bg-[#2563EB] hover:bg-[#1D4ED8]"
-                    onClick={addReceipt}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Expense
-                  </Button>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Date</Label>
+                  <Input type="date" value={formState.expenseDate} onChange={(e) => setFormState((prev) => ({ ...prev, expenseDate: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Vendor</Label>
+                  <Input value={formState.vendorName} onChange={(e) => setFormState((prev) => ({ ...prev, vendorName: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Amount</Label>
+                  <Input type="number" value={formState.amount} onChange={(e) => setFormState((prev) => ({ ...prev, amount: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Currency</Label>
+                  <Input value={formState.currency} onChange={(e) => setFormState((prev) => ({ ...prev, currency: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Tax Amount</Label>
+                  <Input type="number" value={formState.taxAmount} onChange={(e) => setFormState((prev) => ({ ...prev, taxAmount: e.target.value }))} />
+                </div>
+                <div className="col-span-2">
+                  <Label>Description</Label>
+                  <Textarea value={formState.description} onChange={(e) => setFormState((prev) => ({ ...prev, description: e.target.value }))} rows={3} />
                 </div>
               </div>
+
+              <Button className="w-full" onClick={handleAddExpense} disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : "Add Expense"}
+              </Button>
             </Card>
           )}
 
-          {/* Expenses List */}
           <Card className="p-6">
-            <h3 className="text-lg font-semibold text-[#0F172A] mb-4">
-              Expenses ({receipts.length})
-            </h3>
-
-            {receipts.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                No expenses added yet
-              </div>
+            <h3 className="text-lg font-semibold text-[#0F172A] mb-4">Expenses ({items.length})</h3>
+            {items.length === 0 ? (
+              <div className="text-center text-gray-500 py-6">No expenses added yet.</div>
             ) : (
               <div className="space-y-3">
-                {receipts.map((receipt) => (
-                  <div
-                    key={receipt.id}
-                    className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="w-12 h-12 bg-gray-100 rounded border border-gray-200 flex items-center justify-center">
-                        <FileText className="w-6 h-6 text-gray-400" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-[#0F172A]">
-                            {receipt.vendor}
-                          </p>
-                          <span className="text-xs text-gray-500">
-                            • {receipt.category}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600">{receipt.date}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-semibold text-[#0F172A]">
-                          ${parseFloat(receipt.amount).toFixed(2)}
-                        </p>
-                      </div>
+                {items.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
+                    <div>
+                      <p className="font-medium text-[#0F172A]">{item.vendorName}</p>
+                      <p className="text-xs text-gray-500">{item.category} • {item.expenseDate.split("T")[0]}</p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteReceipt(receipt.id)}
-                      className="ml-4"
-                    >
-                      <X className="w-4 h-4 text-gray-400" />
+                    <div className="text-right">
+                      <p className="text-lg font-semibold text-[#0F172A]">
+                        {formatCurrency(item.amount, item.currency)}
+                      </p>
+                      <p className="text-xs text-gray-500">Tax: {formatCurrency(item.taxAmount, item.currency)}</p>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => handleDeleteExpense(item.id)}>
+                      <Trash2 className="w-4 h-4 text-gray-400" />
                     </Button>
                   </div>
                 ))}
@@ -362,81 +383,46 @@ export default function ExpenseReport() {
           </Card>
         </div>
 
-        {/* Sidebar */}
         <div className="space-y-6">
-          {/* Financial Summary */}
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-600 mb-4">
-              Financial Summary
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center pb-3 border-b border-gray-200">
-                <span className="text-sm text-gray-600">
-                  Advance Received
-                </span>
-                <span className="text-sm font-medium text-[#0F172A]">
-                  ${totalAdvance.toFixed(2)}
-                </span>
+            <h3 className="text-sm font-medium text-gray-600 mb-3">Categories summary</h3>
+            {groupByCategory(items).map(([category, value]) => (
+              <div key={category} className="flex items-center justify-between text-sm text-gray-700 py-2 border-b border-gray-100 last:border-0">
+                <span>{category}</span>
+                <span>{formatCurrency(value, report.currency)}</span>
               </div>
-              <div className="flex justify-between items-center pb-3 border-b border-gray-200">
-                <span className="text-sm text-gray-600">Total Expenses</span>
-                <span className="text-sm font-medium text-[#0F172A]">
-                  ${totalSpent.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center pt-2">
-                <span className="font-medium text-[#0F172A]">
-                  {remaining >= 0 ? "To Return" : "To Be Reimbursed"}
-                </span>
-                <span
-                  className={`text-lg font-semibold ${
-                    remaining >= 0 ? "text-green-600" : "text-orange-600"
-                  }`}
-                >
-                  ${Math.abs(remaining).toFixed(2)}
-                </span>
-              </div>
-            </div>
+            ))}
           </Card>
-
-          {/* Category Breakdown */}
           <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-600 mb-4">
-              By Category
-            </h3>
-            <div className="space-y-3">
-              {Object.entries(
-                receipts.reduce((acc, receipt) => {
-                  const cat = receipt.category || "Other";
-                  acc[cat] = (acc[cat] || 0) + parseFloat(receipt.amount);
-                  return acc;
-                }, {} as Record<string, number>)
-              ).map(([category, amount]) => (
-                <div
-                  key={category}
-                  className="flex justify-between items-center"
-                >
-                  <span className="text-sm text-gray-600">{category}</span>
-                  <span className="text-sm font-medium text-[#0F172A]">
-                    ${amount.toFixed(2)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* Notes */}
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-600 mb-4">
-              Notes (Optional)
-            </h3>
-            <Textarea
-              placeholder="Add any additional notes or comments about this expense report..."
-              rows={4}
-            />
+            <h3 className="text-sm font-medium text-gray-600 mb-3">Notes</h3>
+            <Textarea rows={4} placeholder="Add any internal notes for finance..." />
           </Card>
         </div>
       </div>
     </div>
   );
+}
+
+function SummaryCard({ label, value, subtitle, variant = "default" }: { label: string; value: string; subtitle?: string; variant?: "default" | "warning" | "success" | "danger" }) {
+  const colors: Record<string, string> = {
+    default: "text-[#0F172A]",
+    warning: "text-orange-600",
+    success: "text-green-600",
+    danger: "text-red-600",
+  };
+  return (
+    <Card className="p-4">
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <p className={`text-2xl font-semibold ${colors[variant]}`}>{value}</p>
+      {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+    </Card>
+  );
+}
+
+function groupByCategory(items: ExpenseItem[]) {
+  const totals = new Map<string, number>();
+  items.forEach((item) => {
+    totals.set(item.category, (totals.get(item.category) || 0) + item.amount);
+  });
+  return Array.from(totals.entries());
 }

@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, Navigate } from "react-router";
 import Login from "./screens/Login";
 import Dashboard from "./screens/Dashboard";
 import TripsList from "./screens/TripsList";
@@ -9,15 +9,20 @@ import ApprovalScreen from "./screens/ApprovalScreen";
 import BudgetControl from "./screens/BudgetControl";
 import Profile from "./screens/Profile";
 import AppLayout from "./components/AppLayout";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 
 export const router = createBrowserRouter([
   {
     path: "/login",
-    Component: Login,
+    element: <Login />,
   },
   {
     path: "/",
-    Component: AppLayout,
+    element: (
+      <ProtectedRoute>
+        <AppLayout />
+      </ProtectedRoute>
+    ),
     children: [
       { index: true, Component: Dashboard },
       { path: "trips", Component: TripsList },
@@ -28,5 +33,9 @@ export const router = createBrowserRouter([
       { path: "budgets", Component: BudgetControl },
       { path: "profile", Component: Profile },
     ],
+  },
+  {
+    path: "*",
+    element: <Navigate to="/" replace />,
   },
 ]);

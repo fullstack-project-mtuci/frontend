@@ -1,261 +1,298 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, Plus, Minus } from "lucide-react";
+import { ArrowLeft, Info, AlertCircle } from "lucide-react";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
+import { createTrip, updateTripStatus } from "../api";
+import type { TripFormValues } from "../types";
+import { formatCurrency } from "../lib/format";
 
-interface ExpenseItem {
-  id: string;
-  category: string;
-  amount: string;
+interface TripFormState {
+  destinationCity: string;
+  destinationCountry: string;
+  purpose: string;
+  comment: string;
+  startDate: string;
+  endDate: string;
+  plannedTransport: string;
+  plannedHotel: string;
+  plannedDailyAllowance: string;
+  plannedOther: string;
+  currency: string;
+  projectId?: string;
 }
+
+const defaultState: TripFormState = {
+  destinationCity: "",
+  destinationCountry: "",
+  purpose: "",
+  comment: "",
+  startDate: "",
+  endDate: "",
+  plannedTransport: "0",
+  plannedHotel: "0",
+  plannedDailyAllowance: "0",
+  plannedOther: "0",
+  currency: "USD",
+  projectId: "",
+};
 
 export default function CreateTrip() {
   const navigate = useNavigate();
-  const [destination, setDestination] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [purpose, setPurpose] = useState("");
-  const [expenses, setExpenses] = useState<ExpenseItem[]>([
-    { id: "1", category: "Transport", amount: "1500" },
-    { id: "2", category: "Hotel", amount: "2000" },
-    { id: "3", category: "Daily Allowance", amount: "800" },
-  ]);
+  const [formState, setFormState] = useState<TripFormState>(defaultState);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const addExpense = () => {
-    setExpenses([
-      ...expenses,
-      { id: Date.now().toString(), category: "", amount: "" },
-    ]);
+  const totalBudget =
+    Number(formState.plannedTransport || 0) +
+    Number(formState.plannedHotel || 0) +
+    Number(formState.plannedDailyAllowance || 0) +
+    Number(formState.plannedOther || 0);
+
+  const updateField = (field: keyof TripFormState, value: string) => {
+    setFormState((prev) => ({ ...prev, [field]: value }));
   };
 
-  const removeExpense = (id: string) => {
-    setExpenses(expenses.filter((exp) => exp.id !== id));
-  };
+  const mapToPayload = (): TripFormValues => ({
+    destinationCity: formState.destinationCity.trim(),
+    destinationCountry: formState.destinationCountry.trim(),
+    purpose: formState.purpose.trim(),
+    comment: formState.comment,
+    startDate: formState.startDate,
+    endDate: formState.endDate,
+    currency: formState.currency,
+    projectId: formState.projectId?.trim() || undefined,
+    plannedTransport: Number(formState.plannedTransport) || 0,
+    plannedHotel: Number(formState.plannedHotel) || 0,
+    plannedDailyAllowance: Number(formState.plannedDailyAllowance) || 0,
+    plannedOther: Number(formState.plannedOther) || 0,
+  });
 
-  const updateExpense = (id: string, field: string, value: string) => {
-    setExpenses(
-      expenses.map((exp) =>
-        exp.id === id ? { ...exp, [field]: value } : exp
-      )
-    );
-  };
-
-  const totalBudget = expenses.reduce(
-    (sum, exp) => sum + (parseFloat(exp.amount) || 0),
-    0
-  );
-
-  const handleSubmit = (isDraft: boolean) => {
-    // Mock submission
-    navigate("/trips");
+  const handleSubmit = async (action: "draft" | "submit") => {
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const payload = mapToPayload();
+      const created = await createTrip(payload);
+      if (action === "submit") {
+        await updateTripStatus(created.id, "submitted", payload.comment);
+      }
+      navigate(`/trips/${created.id}`);
+    } catch (err) {
+      console.error(err);
+      setError("Unable to save trip. Please check the form and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate("/trips")}
-        >
+        <Button variant="ghost" size="sm" onClick={() => navigate("/trips")}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Trips
         </Button>
       </div>
 
       <div>
-        <h1 className="text-2xl font-semibold text-[#0F172A]">
-          Create New Trip
-        </h1>
+        <h1 className="text-2xl font-semibold text-[#0F172A]">Create New Trip</h1>
         <p className="text-sm text-gray-600 mt-1">
-          Fill in the details for your business trip
+          Fill in the details for your business trip and submit for approval
         </p>
       </div>
 
+      {error && (
+        <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 px-4 py-3 rounded-lg">
+          <AlertCircle className="w-4 h-4" />
+          {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Form */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Trip Details */}
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold text-[#0F172A] mb-6">
-              Trip Details
-            </h2>
-            <div className="space-y-4">
+          <Card className="p-6 space-y-4">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Info className="w-4 h-4 text-[#2563EB]" />
+              Provide clear purpose and accurate budget estimates to speed up approvals.
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="destination">Destination</Label>
+                <Label htmlFor="destinationCity">Destination City</Label>
                 <Input
-                  id="destination"
-                  placeholder="e.g., New York, USA"
-                  value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  className="mt-1.5"
+                  id="destinationCity"
+                  placeholder="e.g., New York"
+                  value={formState.destinationCity}
+                  onChange={(e) => updateField("destinationCity", e.target.value)}
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="startDate">Start Date</Label>
-                  <Input
-                    id="startDate"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="mt-1.5"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="endDate">End Date</Label>
-                  <Input
-                    id="endDate"
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="mt-1.5"
-                  />
-                </div>
-              </div>
-
               <div>
-                <Label htmlFor="purpose">Purpose of Trip</Label>
-                <Textarea
-                  id="purpose"
-                  placeholder="Describe the purpose of your business trip..."
-                  value={purpose}
-                  onChange={(e) => setPurpose(e.target.value)}
-                  className="mt-1.5"
-                  rows={4}
+                <Label htmlFor="destinationCountry">Destination Country</Label>
+                <Input
+                  id="destinationCountry"
+                  placeholder="e.g., USA"
+                  value={formState.destinationCountry}
+                  onChange={(e) => updateField("destinationCountry", e.target.value)}
                 />
               </div>
+              <div>
+                <Label htmlFor="startDate">Start Date</Label>
+                <Input
+                  id="startDate"
+                  type="date"
+                  value={formState.startDate}
+                  onChange={(e) => updateField("startDate", e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="endDate">End Date</Label>
+                <Input
+                  id="endDate"
+                  type="date"
+                  value={formState.endDate}
+                  onChange={(e) => updateField("endDate", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="purpose">Purpose</Label>
+              <Textarea
+                id="purpose"
+                rows={3}
+                placeholder="Describe the scope of meetings or activities"
+                value={formState.purpose}
+                onChange={(e) => updateField("purpose", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="comment">Additional Notes</Label>
+              <Textarea
+                id="comment"
+                rows={3}
+                placeholder="Optional context for reviewers"
+                value={formState.comment}
+                onChange={(e) => updateField("comment", e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="currency">Currency (ISO code)</Label>
+              <Input
+                id="currency"
+                placeholder="USD"
+                value={formState.currency}
+                onChange={(e) => updateField("currency", e.target.value.toUpperCase())}
+              />
+            </div>
+            <div>
+              <Label htmlFor="projectId">Project ID (optional)</Label>
+              <Input
+                id="projectId"
+                placeholder="Enter related project ID"
+                value={formState.projectId}
+                onChange={(e) => updateField("projectId", e.target.value)}
+              />
             </div>
           </Card>
 
-          {/* Expense Planning */}
-          <Card className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-[#0F172A]">
-                Expense Planning
-              </h2>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={addExpense}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Expense
-              </Button>
+          <Card className="p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-[#0F172A]">Budget Planning</h2>
             </div>
-
-            <div className="space-y-3">
-              {expenses.map((expense, index) => (
-                <div key={expense.id} className="flex gap-3 items-start">
-                  <div className="flex-1">
-                    <Input
-                      placeholder="Category (e.g., Transport, Hotel)"
-                      value={expense.category}
-                      onChange={(e) =>
-                        updateExpense(expense.id, "category", e.target.value)
-                      }
-                    />
-                  </div>
-                  <div className="w-40">
-                    <Input
-                      type="number"
-                      placeholder="Amount"
-                      value={expense.amount}
-                      onChange={(e) =>
-                        updateExpense(expense.id, "amount", e.target.value)
-                      }
-                    />
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeExpense(expense.id)}
-                    disabled={expenses.length === 1}
-                  >
-                    <Minus className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <NumberField
+                label="Transport"
+                value={formState.plannedTransport}
+                onChange={(value) => updateField("plannedTransport", value)}
+              />
+              <NumberField
+                label="Hotel"
+                value={formState.plannedHotel}
+                onChange={(value) => updateField("plannedHotel", value)}
+              />
+              <NumberField
+                label="Daily Allowance"
+                value={formState.plannedDailyAllowance}
+                onChange={(value) => updateField("plannedDailyAllowance", value)}
+              />
+              <NumberField
+                label="Other"
+                value={formState.plannedOther}
+                onChange={(value) => updateField("plannedOther", value)}
+              />
             </div>
           </Card>
         </div>
 
-        {/* Sidebar - Summary */}
         <div className="space-y-6">
-          <Card className="p-6">
-            <h3 className="text-sm font-medium text-gray-600 mb-4">
-              Budget Summary
-            </h3>
-            <div className="space-y-4">
-              <div className="pb-4 border-b border-gray-200">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-gray-600">
-                    Planned Expenses
-                  </span>
-                  <span className="text-sm font-medium text-[#0F172A]">
-                    {expenses.length}
-                  </span>
-                </div>
-                {expenses.map((expense) => (
-                  <div
-                    key={expense.id}
-                    className="flex justify-between items-center text-xs text-gray-500 mt-1"
-                  >
-                    <span>{expense.category || "Unnamed"}</span>
-                    <span>${expense.amount || "0"}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center">
-                  <span className="font-medium text-[#0F172A]">
-                    Total Budget
-                  </span>
-                  <span className="text-2xl font-semibold text-[#2563EB]">
-                    ${totalBudget.toLocaleString()}
-                  </span>
-                </div>
-              </div>
+          <Card className="p-6 space-y-4">
+            <h3 className="text-sm font-medium text-gray-600">Budget Summary</h3>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-500">Total Planned Budget</span>
+              <span className="text-xl font-semibold text-[#2563EB]">
+                {formatCurrency(totalBudget, formState.currency || "USD")}
+              </span>
+            </div>
+            <div className="text-xs text-gray-500 border-t border-gray-200 pt-3">
+              Update the values to reflect expected spend. You can adjust after creating the trip.
             </div>
           </Card>
 
           <Card className="p-6 bg-blue-50 border-blue-200">
-            <h3 className="text-sm font-medium text-[#0F172A] mb-2">
-              Next Steps
-            </h3>
-            <ul className="text-xs text-gray-600 space-y-2">
-              <li>• Submit for manager approval</li>
-              <li>• Request advance payment if needed</li>
-              <li>• Upload receipts during the trip</li>
-              <li>• Submit expense report after trip</li>
+            <h3 className="text-sm font-semibold text-[#0F172A] mb-2">Tips</h3>
+            <ul className="text-xs text-gray-700 space-y-2">
+              <li>• Provide destinations exactly as they appear on passports.</li>
+              <li>• Submit at least 5 days before travel when approvals are required.</li>
+              <li>• After submission, upload receipts via the Expense Report screen.</li>
             </ul>
           </Card>
 
-          {/* Actions */}
           <div className="space-y-3">
             <Button
               className="w-full bg-[#2563EB] hover:bg-[#1D4ED8]"
-              onClick={() => handleSubmit(false)}
+              disabled={isSubmitting}
+              onClick={() => handleSubmit("submit")}
             >
-              Submit for Approval
+              {isSubmitting ? "Processing..." : "Submit for Approval"}
             </Button>
             <Button
               variant="outline"
               className="w-full"
-              onClick={() => handleSubmit(true)}
+              disabled={isSubmitting}
+              onClick={() => handleSubmit("draft")}
             >
               Save as Draft
             </Button>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <Input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        min={0}
+      />
     </div>
   );
 }

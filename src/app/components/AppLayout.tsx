@@ -1,16 +1,8 @@
-import { Outlet, useNavigate, useLocation } from "react-router";
+import { Outlet } from "react-router";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
 export default function AppLayout() {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  // Redirect to login if on root
-  if (location.pathname === "/" && !location.state) {
-    // Allow dashboard access
-  }
-
   return (
     <div className="flex h-screen bg-[#F8FAFC]">
       <Sidebar />

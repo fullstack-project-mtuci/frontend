@@ -2,23 +2,37 @@ import { Link, useLocation } from "react-router";
 import {
   LayoutDashboard,
   Plane,
-  Receipt,
   Wallet,
   FileText,
   User,
+  LogOut,
 } from "lucide-react";
+import { useMemo } from "react";
+import { useAuth } from "../providers/AuthProvider";
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Trips", href: "/trips", icon: Plane },
-  { name: "Expenses", href: "/trips/1/expenses", icon: Receipt },
-  { name: "Budgets", href: "/budgets", icon: Wallet },
-  { name: "Approvals", href: "/approvals", icon: FileText },
-  { name: "Profile", href: "/profile", icon: User },
+  { name: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["employee", "manager", "accountant", "admin"] },
+  { name: "Trips", href: "/trips", icon: Plane, roles: ["employee", "manager", "accountant", "admin"] },
+  { name: "Approvals", href: "/approvals", icon: FileText, roles: ["manager", "accountant", "admin"] },
+  { name: "Budgets", href: "/budgets", icon: Wallet, roles: ["manager", "accountant", "admin"] },
+  { name: "Profile", href: "/profile", icon: User, roles: ["employee", "manager", "accountant", "admin"] },
 ];
 
 export function Sidebar() {
   const location = useLocation();
+  const { user, logout } = useAuth();
+
+  const visibleItems = useMemo(() => {
+    if (!user) return [];
+    return navigation.filter((item) => item.roles.includes(user.role));
+  }, [user]);
+
+  const initials = user?.fullName
+    ?.split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
@@ -34,7 +48,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-4 py-6 space-y-1">
-        {navigation.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = location.pathname === item.href;
           return (
             <Link
@@ -56,15 +70,24 @@ export function Sidebar() {
       {/* User info */}
       <div className="p-4 border-t border-gray-200">
         <div className="flex items-center gap-3 px-2">
-          <div className="w-10 h-10 bg-[#2563EB] rounded-full flex items-center justify-center">
-            <span className="text-white text-sm font-medium">JD</span>
+          <div className="w-10 h-10 bg-[#2563EB] rounded-full flex items-center justify-center text-white text-sm font-semibold uppercase">
+            {initials || "ME"}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-[#0F172A] truncate">
-              John Doe
+              {user?.fullName || "Loading..."}
             </p>
-            <p className="text-xs text-gray-500 truncate">Employee</p>
+            <p className="text-xs text-gray-500 truncate">
+              {user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : ""}
+            </p>
           </div>
+          <button
+            onClick={logout}
+            className="p-2 text-gray-500 hover:text-[#2563EB] rounded-lg hover:bg-gray-50"
+            aria-label="Sign out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </div>

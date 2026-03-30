@@ -3,8 +3,17 @@ import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { useAuth } from "../providers/AuthProvider";
 
 export default function Profile() {
+  const { user } = useAuth();
+  const initials =
+    user?.fullName
+      ?.split(" ")
+      .map((name) => name[0])
+      .join("")
+      .toUpperCase() || "ME";
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -15,9 +24,9 @@ export default function Profile() {
             Manage your account settings and preferences
           </p>
         </div>
-        <Button className="bg-[#2563EB] hover:bg-[#1D4ED8]">
+        <Button className="bg-[#2563EB] hover:bg-[#1D4ED8]" disabled>
           <Edit className="w-4 h-4 mr-2" />
-          Edit Profile
+          Editing controlled by admin
         </Button>
       </div>
 
@@ -25,25 +34,25 @@ export default function Profile() {
         {/* Profile Card */}
         <Card className="p-6">
           <div className="flex flex-col items-center text-center">
-            <div className="w-24 h-24 bg-[#2563EB] rounded-full flex items-center justify-center mb-4">
-              <span className="text-white text-3xl font-medium">JD</span>
+            <div className="w-24 h-24 bg-[#2563EB] rounded-full flex items-center justify-center mb-4 text-white text-3xl font-semibold">
+              {initials}
             </div>
             <h2 className="text-xl font-semibold text-[#0F172A] mb-1">
-              John Doe
+              {user?.fullName || "User"}
             </h2>
-            <p className="text-sm text-gray-600 mb-4">Employee</p>
+            <p className="text-sm text-gray-600 mb-4 capitalize">{user?.role || "Role"}</p>
             <div className="w-full pt-4 border-t border-gray-200 space-y-3">
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Mail className="w-4 h-4" />
-                <span>john.doe@company.com</span>
+                <span>{user?.email || "N/A"}</span>
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Building2 className="w-4 h-4" />
-                <span>Engineering Department</span>
+                <span>Department managed centrally</span>
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Calendar className="w-4 h-4" />
-                <span>Joined Jan 2024</span>
+                <span>Joined {new Date(user?.createdAt || Date.now()).toLocaleDateString()}</span>
               </div>
             </div>
           </div>
@@ -61,7 +70,7 @@ export default function Profile() {
                 <Label htmlFor="firstName">First Name</Label>
                 <Input
                   id="firstName"
-                  defaultValue="John"
+                  defaultValue={user?.fullName?.split(" ")[0] || ""}
                   className="mt-1.5"
                   disabled
                 />
@@ -70,7 +79,7 @@ export default function Profile() {
                 <Label htmlFor="lastName">Last Name</Label>
                 <Input
                   id="lastName"
-                  defaultValue="Doe"
+                  defaultValue={user?.fullName?.split(" ").slice(1).join(" ") || ""}
                   className="mt-1.5"
                   disabled
                 />
@@ -80,7 +89,7 @@ export default function Profile() {
                 <Input
                   id="email"
                   type="email"
-                  defaultValue="john.doe@company.com"
+                  defaultValue={user?.email || ""}
                   className="mt-1.5"
                   disabled
                 />
@@ -89,7 +98,7 @@ export default function Profile() {
                 <Label htmlFor="phone">Phone Number</Label>
                 <Input
                   id="phone"
-                  defaultValue="+1 (555) 123-4567"
+                  defaultValue=""
                   className="mt-1.5"
                   disabled
                 />
@@ -98,7 +107,7 @@ export default function Profile() {
                 <Label htmlFor="employeeId">Employee ID</Label>
                 <Input
                   id="employeeId"
-                  defaultValue="EMP-001234"
+                  defaultValue=""
                   className="mt-1.5"
                   disabled
                 />
@@ -116,7 +125,7 @@ export default function Profile() {
                 <Label htmlFor="department">Department</Label>
                 <Input
                   id="department"
-                  defaultValue="Engineering"
+                  defaultValue=""
                   className="mt-1.5"
                   disabled
                 />
@@ -125,7 +134,7 @@ export default function Profile() {
                 <Label htmlFor="position">Position</Label>
                 <Input
                   id="position"
-                  defaultValue="Senior Software Engineer"
+                  defaultValue=""
                   className="mt-1.5"
                   disabled
                 />
@@ -134,7 +143,7 @@ export default function Profile() {
                 <Label htmlFor="manager">Manager</Label>
                 <Input
                   id="manager"
-                  defaultValue="Jane Smith"
+                  defaultValue=""
                   className="mt-1.5"
                   disabled
                 />
@@ -143,7 +152,7 @@ export default function Profile() {
                 <Label htmlFor="location">Office Location</Label>
                 <Input
                   id="location"
-                  defaultValue="San Francisco, CA"
+                  defaultValue=""
                   className="mt-1.5"
                   disabled
                 />

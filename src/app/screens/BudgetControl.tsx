@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Badge } from "../components/ui/badge";
-import { listBudgets } from "../api";
-import type { Budget } from "../types";
+import { listBudgets, listDepartments, listProjects } from "../api";
+import type { Budget, Department, Project } from "../types";
 import { formatCurrency, formatDate } from "../lib/format";
 import { ApiError } from "../api/client";
 
@@ -17,10 +16,36 @@ export default function BudgetControl() {
   const [hasAccess, setHasAccess] = useState(true);
   const [filters, setFilters] = useState({ scopeType: "department", scopeId: "" });
   const [appliedFilters, setAppliedFilters] = useState(filters);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
 
   useEffect(() => {
     void loadBudgets(appliedFilters);
   }, [appliedFilters]);
+
+  useEffect(() => {
+    let ignore = false;
+    const loadReferences = async () => {
+      try {
+        const [deps, projs] = await Promise.all([listDepartments(), listProjects()]);
+        if (!ignore) {
+          setDepartments(deps);
+          setProjects(projs);
+          setReferenceError(null);
+        }
+      } catch (err) {
+        if (!ignore) {
+          console.error(err);
+          setReferenceError("Failed to load departments/projects");
+        }
+      }
+    };
+    void loadReferences();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const loadBudgets = async (params: { scopeType?: string; scopeId?: string }) => {
     try {
@@ -69,10 +94,6 @@ export default function BudgetControl() {
           <h1 className="text-2xl font-semibold text-[#0F172A]">Budget Control</h1>
           <p className="text-sm text-gray-600 mt-1">Monitor allocations, reservations, and actual spend.</p>
         </div>
-        <Button variant="outline" disabled>
-          <Download className="w-4 h-4 mr-2" />
-          Export CSV (coming soon)
-        </Button>
       </div>
 
       <Card className="p-6 space-y-4">
@@ -86,13 +107,26 @@ export default function BudgetControl() {
               <SelectItem value="project">Project</SelectItem>
             </SelectContent>
           </Select>
-          <Input
-            placeholder={`${filters.scopeType} ID`}
-            value={filters.scopeId}
-            onChange={(e) => setFilters((prev) => ({ ...prev, scopeId: e.target.value }))}
-          />
+          <Select
+            value={filters.scopeId || "all"}
+            onValueChange={(value) => setFilters((prev) => ({ ...prev, scopeId: value === "all" ? "" : value }))}
+            disabled={(filters.scopeType === "department" ? departments : projects).length === 0}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={`Select ${filters.scopeType}`} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All {filters.scopeType === "department" ? "departments" : "projects"}</SelectItem>
+              {(filters.scopeType === "department" ? departments : projects).map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  {item.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button onClick={() => setAppliedFilters(filters)}>Apply</Button>
         </div>
+        {referenceError && <p className="text-xs text-red-600">{referenceError}</p>}
       </Card>
 
       {error && (

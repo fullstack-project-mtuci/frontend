@@ -15,7 +15,8 @@ export class ApiError<T = unknown> extends Error {
   }
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "/api/v1").replace(/\/$/, "");
+// const API_BASE_URL = (import.meta.env.VITE_API_URL || "/api/v1").replace(/\/$/, "");
+const API_BASE_URL = ("http://localhost:8080/api/v1" ).replace(/\/$/, "");
 
 interface ApiFetchOptions {
   method?: string;

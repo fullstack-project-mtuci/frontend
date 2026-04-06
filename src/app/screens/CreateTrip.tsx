@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, Info, AlertCircle } from "lucide-react";
 import { Card } from "../components/ui/card";
@@ -6,8 +6,10 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
-import { createTrip, updateTripStatus } from "../api";
-import type { TripFormValues } from "../types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { createTrip, listProjects, updateTripStatus } from "../api";
+import type { Project, TripFormValues } from "../types";
+import { useAuth } from "../providers/AuthProvider";
 import { formatCurrency } from "../lib/format";
 
 interface TripFormState {
@@ -22,7 +24,7 @@ interface TripFormState {
   plannedDailyAllowance: string;
   plannedOther: string;
   currency: string;
-  projectId?: string;
+  projectId: string;
 }
 
 const defaultState: TripFormState = {
@@ -42,9 +44,66 @@ const defaultState: TripFormState = {
 
 export default function CreateTrip() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isEmployee = user?.role === "employee";
+  const userDepartmentId = user?.departmentId;
+  const missingDepartment = isEmployee && !userDepartmentId;
   const [formState, setFormState] = useState<TripFormState>(defaultState);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!user) {
+      setProjects([]);
+      setProjectsLoading(false);
+      setProjectsError(null);
+      return;
+    }
+
+    if (missingDepartment) {
+      setProjects([]);
+      setProjectsLoading(false);
+      setProjectsError("Your profile is missing a department assignment. Contact an administrator.");
+      return;
+    }
+
+    const loadProjects = async () => {
+      try {
+        setProjectsLoading(true);
+        const params = userDepartmentId ? { departmentId: userDepartmentId } : undefined;
+        const list = await listProjects(params);
+        if (!cancelled) {
+          const filtered =
+            isEmployee && userDepartmentId
+              ? list.filter((project) => project.departmentId === userDepartmentId)
+              : list;
+          setProjects(filtered);
+          setProjectsError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error(err);
+          setProjectsError("Unable to load projects for your department");
+          setProjects([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setProjectsLoading(false);
+        }
+      }
+    };
+
+    void loadProjects();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, isEmployee, userDepartmentId, missingDepartment]);
 
   const totalBudget =
     Number(formState.plannedTransport || 0) +
@@ -64,7 +123,7 @@ export default function CreateTrip() {
     startDate: formState.startDate,
     endDate: formState.endDate,
     currency: formState.currency,
-    projectId: formState.projectId?.trim() || undefined,
+    projectId: formState.projectId.trim() || undefined,
     plannedTransport: Number(formState.plannedTransport) || 0,
     plannedHotel: Number(formState.plannedHotel) || 0,
     plannedDailyAllowance: Number(formState.plannedDailyAllowance) || 0,
@@ -189,14 +248,33 @@ export default function CreateTrip() {
                 onChange={(e) => updateField("currency", e.target.value.toUpperCase())}
               />
             </div>
-            <div>
-              <Label htmlFor="projectId">Project ID (optional)</Label>
-              <Input
-                id="projectId"
-                placeholder="Enter related project ID"
-                value={formState.projectId}
-                onChange={(e) => updateField("projectId", e.target.value)}
-              />
+            <div className="space-y-2">
+              <Label>Project</Label>
+              <Select
+                value={formState.projectId || "none"}
+                onValueChange={(value) => updateField("projectId", value)}
+                disabled={projectsLoading || missingDepartment}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={projectsLoading ? "Loading projects..." : "Select project"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {missingDepartment ? (
+                <p className="text-xs text-red-600">
+                  We cannot determine available projects because your account is not linked to a department.
+                </p>
+              ) : projectsError ? (
+                <p className="text-xs text-red-600">{projectsError}</p>
+              ) : (
+                <p className="text-xs text-gray-500">Each trip must be associated with a project for budgeting.</p>
+              )}
             </div>
           </Card>
 

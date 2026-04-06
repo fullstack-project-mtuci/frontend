@@ -26,8 +26,16 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedEmail || !trimmedPassword) {
+      setError("Please enter both email and password.");
+      return;
+    }
+
     try {
-      await login(email, password);
+      await login(trimmedEmail, trimmedPassword);
       navigate(from, { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
@@ -56,7 +64,7 @@ export default function Login() {
 
         {/* Login form */}
         <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-200">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} noValidate className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="email">Email address</Label>
               <Input

@@ -6,6 +6,7 @@ import {
   FileText,
   User,
   LogOut,
+  ShieldCheck,
 } from "lucide-react";
 import { useMemo } from "react";
 import { useAuth } from "../providers/AuthProvider";
@@ -15,6 +16,7 @@ const navigation = [
   { name: "Trips", href: "/trips", icon: Plane, roles: ["employee", "manager", "accountant", "admin"] },
   { name: "Approvals", href: "/approvals", icon: FileText, roles: ["manager", "accountant", "admin"] },
   { name: "Budgets", href: "/budgets", icon: Wallet, roles: ["manager", "accountant", "admin"] },
+  { name: "Admin", href: "/admin", icon: ShieldCheck, roles: ["admin"] },
   { name: "Profile", href: "/profile", icon: User, roles: ["employee", "manager", "accountant", "admin"] },
 ];
 

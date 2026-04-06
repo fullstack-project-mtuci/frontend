@@ -10,6 +10,7 @@ import BudgetControl from "./screens/BudgetControl";
 import Profile from "./screens/Profile";
 import AppLayout from "./components/AppLayout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import AdminPanel from "./screens/AdminPanel";
 
 export const router = createBrowserRouter([
   {
@@ -32,6 +33,7 @@ export const router = createBrowserRouter([
       { path: "approvals", Component: ApprovalScreen },
       { path: "budgets", Component: BudgetControl },
       { path: "profile", Component: Profile },
+      { path: "admin", Component: AdminPanel },
     ],
   },
   {

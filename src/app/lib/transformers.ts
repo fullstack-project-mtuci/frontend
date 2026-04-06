@@ -2,9 +2,12 @@ import type {
   ApprovalAction,
   AuditLog,
   Budget,
+  Department,
+  ExpenseCategory,
   ExpenseItem,
   ExpenseReport,
   OcrDraft,
+  Project,
   ReceiptFile,
   TripRequest,
   User,
@@ -24,6 +27,9 @@ export function mapUser(payload: any): User {
     email: pickString(payload?.email),
     fullName: pickString(payload?.full_name || payload?.fullName),
     role: pickString(payload?.role) as User["role"],
+    departmentId: optionalString(payload?.department_id || payload?.departmentId),
+    managerId: optionalString(payload?.manager_id || payload?.managerId),
+    isActive: Boolean(payload?.is_active ?? payload?.isActive ?? true),
     createdAt: pickString(payload?.created_at || payload?.createdAt),
     updatedAt: pickString(payload?.updated_at || payload?.updatedAt),
   };
@@ -166,5 +172,38 @@ export function mapAuditLog(payload: any): AuditLog {
     ipAddress: optionalString(payload?.ip_address || payload?.ipAddress),
     userAgent: optionalString(payload?.user_agent || payload?.userAgent),
     createdAt: pickString(payload?.created_at || payload?.createdAt),
+  };
+}
+
+export function mapDepartment(payload: any): Department {
+  return {
+    id: pickString(payload?.id),
+    name: pickString(payload?.name),
+    code: pickString(payload?.code),
+    createdAt: pickString(payload?.created_at || payload?.createdAt),
+    updatedAt: pickString(payload?.updated_at || payload?.updatedAt),
+  };
+}
+
+export function mapProject(payload: any): Project {
+  return {
+    id: pickString(payload?.id),
+    name: pickString(payload?.name),
+    code: pickString(payload?.code),
+    departmentId: optionalString(payload?.department_id || payload?.departmentId),
+    isActive: Boolean(payload?.is_active ?? payload?.isActive ?? true),
+    createdAt: pickString(payload?.created_at || payload?.createdAt),
+    updatedAt: pickString(payload?.updated_at || payload?.updatedAt),
+  };
+}
+
+export function mapExpenseCategory(payload: any): ExpenseCategory {
+  return {
+    id: pickString(payload?.id),
+    name: pickString(payload?.name),
+    code: pickString(payload?.code),
+    isActive: Boolean(payload?.is_active ?? payload?.isActive ?? true),
+    createdAt: pickString(payload?.created_at || payload?.createdAt),
+    updatedAt: pickString(payload?.updated_at || payload?.updatedAt),
   };
 }

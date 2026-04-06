@@ -5,6 +5,9 @@ export interface User {
   email: string;
   fullName: string;
   role: Role;
+  departmentId?: string | null;
+  managerId?: string | null;
+  isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -179,4 +182,68 @@ export interface ExpenseItemFormValues {
   description: string;
   receiptFileId?: string;
   source?: ExpenseSource;
+}
+
+export interface Department {
+  id: string;
+  name: string;
+  code: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  code: string;
+  departmentId?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExpenseCategory {
+  id: string;
+  name: string;
+  code: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminUserInput {
+  email: string;
+  fullName: string;
+  role: Role;
+  password?: string;
+  departmentId?: string | null;
+  managerId?: string | null;
+  isActive: boolean;
+}
+
+export interface DepartmentInput {
+  name: string;
+  code: string;
+}
+
+export interface ProjectInput {
+  name: string;
+  code: string;
+  departmentId?: string | null;
+  isActive: boolean;
+}
+
+export interface ExpenseCategoryInput {
+  name: string;
+  code: string;
+  isActive: boolean;
+}
+
+export interface BudgetInput {
+  scopeType: BudgetScopeType;
+  scopeId: string;
+  periodStart: string;
+  periodEnd: string;
+  totalLimit: number;
+  currency: string;
 }
